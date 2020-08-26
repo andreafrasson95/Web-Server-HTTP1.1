@@ -9,7 +9,7 @@
 #include <strings.h>
 #include <errno.h>
 #include <fcntl.h>
-//#include <sys/sendfile.h>
+#include <sys/sendfile.h>
 
 #include "webserver.h"
 
@@ -221,7 +221,7 @@ int main(){
         //PRIMA VOLTA QUI	
        if( (controllo[count]->offset==0) && (controllo[count]->authorized==1) && (controllo[count]->skip==0) ){
          	
-        if( !(access(controllo[count]->file_pointer, F_OK))){ 
+        if( access(controllo[count]->file_pointer, F_OK)){ 
 
             printf("File %s Non Aperto\n",controllo[count]->file_pointer);
             sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
@@ -262,11 +262,12 @@ int main(){
 
          if(t==-1 && errno==EAGAIN)
             break;
-
-         controllo[count]->offset+=t;  
-          
+         if(controllo[count]->offset==controllo[count]->body_size)
+            close(controllo[count]->fin);
+	 else 
+            break;		  
        }        
-       if(controllo[count]->offset<controllo[count]->body_size) break;
+ 
      
        controllo[count]->offset=0;
        controllo[count]->numero_header=0;
