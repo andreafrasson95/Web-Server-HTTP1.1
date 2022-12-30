@@ -13,10 +13,11 @@
 
 #include "webserver.h"
 
-int numero;
+
+int active_sockets;
 
 struct sockaddr_in indirizzo;
-struct sockaddr_in indirizzo_remoto;
+struct sockaddr_in remote_address;
 
 
 int primiduepunti;
@@ -28,78 +29,72 @@ char *method,*uri,*http_ver,*scheme;
 
 int main(){
 
- int socket_main,connessione,t,lunghezza,p,yes,z,j,i;
+ int list_socket,t,p,yes,z,j,i;
 
- lunghezza=sizeof(struct sockaddr_in);
- yes=1;
+ list_socket=create_socket(80);
 
- socket_main=socket(AF_INET,SOCK_STREAM,0);
- if(socket_main==-1){
-    perror("Socket Fallita");
-    return 1;
- }
+ struct pollfd * pollfd_sockets=malloc(sizeof(struct pollfd)*POLLFD_LENGTH);
 
- if(setsockopt(socket_main, SOL_SOCKET, SO_REUSEADDR , &yes ,sizeof(int))==-1){
-    perror("Sockopt");
-    return 1;
- }
+ struct state * http_connections_head;
 
- indirizzo.sin_family=AF_INET;
- indirizzo.sin_port=htons(80);
- indirizzo.sin_addr.s_addr=0;
+ /* Creation of Pollfd Data Structure*/
+ pollfd_sockets[0].fd=list_socket;
+ pollfd_sockets[0].events=POLLIN;
+ active_sockets=1;
 
- t=bind(socket_main,(struct sockaddr*)&indirizzo,sizeof(struct sockaddr_in));
- if(t==-1){
-    perror("Bind Fallita");
-    return 1;
- }
-
- t=listen(socket_main,10);
- if(t==-1){
-    perror("Listen Fallita");
-    return 1;
- }
-
-
- struct pollfd * sockets=malloc(sizeof(struct pollfd)*10);
- struct state * controllo[10];
-
- sockets[0].fd=socket_main;
- sockets[0].events=POLLIN;
- numero=1;
-
-
-
+ int length_sockaddr=sizeof(struct sockaddr_in);
+ 
  while(1){
 
-  p=poll(sockets,numero,-1);
-  if(p==-1){
-     perror("Poll Fallita");
-     return 1;
+  if(poll(pollfd_sockets, active_sockets, -1) == -1){
+     perror("Poll Failed");
+     exit(1);
   }
-  //CONTROLLO SE CI SONO CONNESSIONI NUOVE
 
-  if((sockets[0].revents) & POLLIN){
-    printf("NEW CONN Connessione Numero: %d\n",numero);
-    connessione=accept(socket_main,(struct sockaddr *)&indirizzo_remoto,&lunghezza);
-    if(connessione==-1){
-       perror("Accept Fallita");
-       return 1;
+  if((pollfd_sockets[0].revents) & POLLIN){
+    int new_fd;
+    if(new_fd=accept(list_socket, (struct sockaddr *) &remote_address, &length_sockaddr) == -1){
+       perror("Accept Failed");
+       exit(1);
     }
-    sockets[numero].fd=connessione;
-    sockets[numero].events=POLLIN;
-   
-    fcntl(connessione,F_SETFL,fcntl(connessione,F_GETFL,NULL) | O_NONBLOCK);   
- 
-    controllo[numero]=(struct state *)malloc(sizeof(struct state));
-    controllo[numero]->flusso=REQUEST_IN;
-    numero++;   
-  }
 
-  //CONTROLLO SE HO DATA DA LEGGERE
-  for(int count=1;count<numero;count++){
-   if((sockets[count].revents)){ //Evento nel socket Count
-    printf("HO POLLATO %d CON STATO %d \n",sockets[count].revents,controllo[count]->flusso);
+    /*Insert new element in the connection list*/ 
+    struct state * new_connection=new_http_connection(http_connections_head);
+    new_connection->fd=new_fd;        
+    
+    /*Adding element in the pollfd array, if no empty space is found the connection is shutted down*/
+    int free_index=get_free_index(pollfd_sockets);
+    if(free_index==-1){
+      close_connection(new_connection);
+    } 
+    else{
+      new_connection->pollfd_index=free_index;
+      pollfd_sockets[free_index].events=POLLIN;
+      new_connection->flusso=REQUEST_IN; 
+
+      if(fcntl(new_fd,F_SETFL,fcntl(new_fd,F_GETFL,NULL) | O_NONBLOCK) == -1){
+        perror("fcntl Failed");
+        exit(1);
+      }
+
+      active_sockets++;
+    }
+  }   
+
+
+  /*Check if i have events on the sockets*/
+   int count;
+   for(count=1;count<POLLFD_LENGTH;count++){
+    if((pollfd_sockets[count].revents)){ //Evento nel socket Count
+      
+      /*Remote Host has closed connection*/
+      if(sockets[count].revents & POLLHUP){   
+        close_connection(sockets[count].fd);
+        numero--;
+        break;
+      } 
+
+    
     switch(controllo[count]->flusso){
 
      case(REQUEST_IN):{
@@ -314,4 +309,74 @@ int verify(char *buffer){
 }
 
 
+int create_socket(unsigned short port){
+ 
+ int s,yes;
 
+ s=socket(AF_INET,SOCK_STREAM,0);
+ if(s==-1){
+    perror("Socket Creation Failed");
+    exit(1);
+ }
+ 
+ yes=1;
+ if(setsockopt(s, SOL_SOCKET, SO_REUSEADDR , &yes ,sizeof(int))==-1){
+    perror("Sockopt Failed");
+    exit(1);
+ }
+
+ indirizzo.sin_family=AF_INET;
+ indirizzo.sin_port=htons(port);
+ indirizzo.sin_addr.s_addr=0;
+
+ if(bind(s,(struct sockaddr*)&indirizzo,sizeof(struct sockaddr_in))==-1){
+    perror("Bind Failed");
+    exit(1);
+ }
+
+ if(listen(s,10)==-1){
+    perror("Listen Failed");
+    exit(1);
+ }
+
+ return s;
+
+}
+
+struct state * new_http_connection(struct state *head){
+   if(head == NULL){
+     head=(struct state *)malloc(sizeof(struct state));
+     head->next=NULL;
+   }   
+   else{
+     struct state *current=head;
+     while(current->next!=NULL) current=current->next;
+     current->next=(struct state *)malloc(sizeof(struct state));
+     //current->next->data=data;
+     current->next->next=NULL;
+   }  
+}
+
+int get_free_index(struct pollfd * pollfd){
+  int i;
+  for(i=1;i<POLLFD_LENGTH;i++){
+    if(pollfd[i].fd>0) return i;
+  }
+  return -1;
+}
+
+struct node * get_connection(struct node int index)
+
+int close_connection(struct node * connection){
+
+  free(connection->data);
+  shutdown(sockets[count].fd,SHUT_RD);
+  close(sockets[count].fd);
+  int t;
+           for(t=count;t<numero;t++){ 
+             sockets[count]=sockets[count+1];
+             controllo[count]=controllo[count+1];
+           }
+           numero--;
+           break;
+}

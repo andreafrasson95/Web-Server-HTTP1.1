@@ -5,9 +5,9 @@
 #define REQUEST_IN 1
 #define RESPONSE_OUT 2
 
-
+#define POLLFD_LENGTH 10
 //Metodi
-struct state * newConnection();
+struct state * new_http_connection(struct state * head);
 
 int verify(char *buffer);
 
@@ -21,7 +21,10 @@ char * v;
 //Stato Connessione
 struct state{
   char flusso;
-
+  
+  int fd;
+  int pollfd_index;  
+  
   char buffer[1000];
   struct header h[20];
   char numero_header;
@@ -35,5 +38,7 @@ struct state{
   int content_length;
   int header_size;
   int body_size;
+
+  struct state * next;
 };
 #endif
