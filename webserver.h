@@ -6,27 +6,24 @@
 #define RESPONSE_OUT 2
 
 #define POLLFD_LENGTH 10
-//Metodi
-struct state * new_http_connection(struct state * head);
-
-int verify(char *buffer);
 
 //Puntatore Header 
 struct header{
-char * n;
-char * v;
+char * name;
+char * value;
+struct header * next;
 };
 
 
 //Stato Connessione
-struct state{
+struct http_state{
   char flusso;
   
   int fd;
   int pollfd_index;  
   
   char buffer[1000];
-  struct header h[20];
+  struct header * http_headers_head;
   char numero_header;
   int offset;
 
@@ -38,7 +35,17 @@ struct state{
   int content_length;
   int header_size;
   int body_size;
-
-  struct state * next;
+  
+  struct http_state * previous;
+  struct http_state * next;
 };
+
+
+
+//Metodi
+struct http_state * new_http_connection(struct http_state * head);
+
+int close_http_connection(struct http_state * connection)
+
+int verify(char *buffer);
 #endif

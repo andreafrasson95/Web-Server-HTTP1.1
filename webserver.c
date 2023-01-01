@@ -13,12 +13,13 @@
 
 #include "webserver.h"
 
-
+struct pollfd * pollfd_sockets
 int active_sockets;
 
 struct sockaddr_in indirizzo;
 struct sockaddr_in remote_address;
 
+struct state * http_connections_head;
 
 int primiduepunti;
 char *request;
@@ -33,9 +34,7 @@ int main(){
 
  list_socket=create_socket(80);
 
- struct pollfd * pollfd_sockets=malloc(sizeof(struct pollfd)*POLLFD_LENGTH);
-
- struct state * http_connections_head;
+ pollfd_sockets=malloc(sizeof(struct pollfd)*POLLFD_LENGTH);
 
  /* Creation of Pollfd Data Structure*/
  pollfd_sockets[0].fd=list_socket;
@@ -59,13 +58,13 @@ int main(){
     }
 
     /*Insert new element in the connection list*/ 
-    struct state * new_connection=new_http_connection(http_connections_head);
+    struct http_state * new_connection=new_http_connection(http_connections_head);
     new_connection->fd=new_fd;        
     
     /*Adding element in the pollfd array, if no empty space is found the connection is shutted down*/
     int free_index=get_free_index(pollfd_sockets);
     if(free_index==-1){
-      close_connection(new_connection);
+      close_http_connection(new_connection);
     } 
     else{
       new_connection->pollfd_index=free_index;
@@ -343,18 +342,24 @@ int create_socket(unsigned short port){
 
 }
 
-struct state * new_http_connection(struct state *head){
+struct http_state * new_http_connection(struct http_state *head){
+   struct http_state * current=head;
    if(head == NULL){
-     head=(struct state *)malloc(sizeof(struct state));
+     head=(struct http_state *)malloc(sizeof(struct http_state));
      head->next=NULL;
+     head->previous=NULL;
    }   
    else{
-     struct state *current=head;
      while(current->next!=NULL) current=current->next;
-     current->next=(struct state *)malloc(sizeof(struct state));
-     //current->next->data=data;
+     current->next=(struct http_state *)malloc(sizeof(struct http_state));  
      current->next->next=NULL;
-   }  
+     current->next->previous=current;
+   }
+
+   current->http_headers_head=NULL;
+  
+   return current;
+
 }
 
 int get_free_index(struct pollfd * pollfd){
@@ -365,12 +370,33 @@ int get_free_index(struct pollfd * pollfd){
   return -1;
 }
 
-struct node * get_connection(struct node int index)
+//struct node * get_connection(struct node int index){}
 
-int close_connection(struct node * connection){
+int close_http_connection(struct http_state * connection){
 
+  // Start Cleaning
+  struct header * ptr;
+  while(connection->http_headers_head!=NULL){
+    struct header * ptr=connection->http_headers_head->next;
+    free(connection->http_headers_head);
+    connection->http_headers_head=ptr;
+  }
+
+  pollfd_sockets[connection->pollfd_index].fd=-1;
+  if(shutdown(pollfd_sockets[connection->pollfd_index].fd,SHUT_RD)==-1){
+    perror("Socket Shutdown Failed");
+    exit(1);
+  }
+
+  // Remove Element in the Doubly linked List
+  if(connection->previous==NULL){
+    free(connection);
+    http_connections_head=NULL;
+  }
+  else{
+    
+  }
   free(connection->data);
-  shutdown(sockets[count].fd,SHUT_RD);
   close(sockets[count].fd);
   int t;
            for(t=count;t<numero;t++){ 
