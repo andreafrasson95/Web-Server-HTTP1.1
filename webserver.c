@@ -108,54 +108,32 @@ int main(){
 
       /* Data to read in the Socket*/
       if(pollfd_sockets[count].revents & POLLIN){
-        printf("Data in Socket of index: %d\n",count);   
-        //Just for testing
-        t=read(pollfd_sockets[count].fd,request,10000);
-        http_connection->flusso=RESPONSE_OUT;
-        pollfd_sockets[count].events=POLLOUT; 
-        /*
-        char * request=http_connection->buffer;
-        controllo[count]->h[0].n=request;
-        controllo[count]->h[0].v=controllo[count]->h[0].n;
-        request_line=request;
-        for(i=http_connection->offset,j=http_connection->numero_header;(t=read(pollfd_sockets[count].fd,request+i,1))>0;i++){
-          	if (( i>1) && (request[i]=='\n') && (request[i-1]=='\r')){
-	        	primiduepunti=1;
-		        request[i-1]=0;
-	        	if(controllo[count]->h[j].n[0]==0) break;
-	        	controllo[count]->h[++j].n=request+i+1;               
-	        	}
-        	if (primiduepunti && (request[i]==':')){
-         		controllo[count]->h[j].v = request+i+1;
-	        	request[i]=0;
-	        	primiduepunti=0;
-        	}
-       }
-       controllo[count]->offset=i;
-       controllo[count]->numero_header=j;
-       */
-       if (t==-1 && errno==EAGAIN) { 
+        printf("Data in Socket of index: %d and fd number: %d\n",count,pollfd_sockets[count].fd);   
+        
+        int p=parse_http_header(http_connection);   
+        printf("Il valore di p è %d\n",p);
+        if (p==-1 && errno==EAGAIN) { 
          break;
-       }
+        }
 
-       if (t==0){
-           printf("Remote has initiated connection closing\n");
-           close_http_connection(http_connection);
-           break;
-       }
+        if (p==0){
+         printf("Remote has initiated connection closing\n");
+         close_http_connection(http_connection);
+         break;
+        }
 
-
-      /*
-       controllo[count]->offset=0; 
-       controllo[count]->flusso=RESPONSE_OUT;
-       sockets[count].events=POLLOUT; 
+        http_connection->offset=0; 
+       http_connection->flusso=RESPONSE_OUT;
+       pollfd_sockets[count].events=POLLOUT; 
        //STAMPA HEADER E CONTROLLI	
-       printf("Request Line: %s\n",request_line);
-       for(i=1;i<j;i++){
-           printf("%s ===> %s\n",controllo[count]->h[i].n,controllo[count]->h[i].v);
+       //printf("Request Line: %s\n",request_line);
+       struct header * ptr=http_connection->http_headers_head;
+       while(ptr!=NULL){
+           printf("%s ===> %s\n",ptr->name,ptr->value);
+           ptr=ptr->next;
        }   
 	
-
+      /*
        method = request_line;
        for(i=0;request_line[i]!=' '&& request_line[i];i++){};
        if (request_line[i]!=0) { request_line[i]=0; i++;}
@@ -212,6 +190,7 @@ int main(){
        
        sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
        write(pollfd_sockets[count].fd,response,strlen(response));
+
        
        /*
        response=controllo[count]->buffer;
@@ -273,6 +252,8 @@ int main(){
        */
        pollfd_sockets[count].events=POLLIN;
        http_connection->flusso=REQUEST_IN;
+
+       clearing_headers(http_connection);
       }//Fine If POLLOUT
      }//Fine Case RESPONSE_OUT
     }//Fine Switch
@@ -351,19 +332,19 @@ int create_socket(unsigned short port){
 struct http_state * new_http_connection(){
    struct http_state * current=http_connections_head;
    if(current == NULL){
-     current=http_connections_head=(struct http_state *)malloc(sizeof(struct http_state));
+     http_connections_head=(struct http_state *)malloc(sizeof(struct http_state));
      http_connections_head->next=NULL;
      http_connections_head->previous=NULL;     
+     current=http_connections_head;
    }   
    else{
      while(current->next!=NULL) current=current->next;
      current->next=(struct http_state *)malloc(sizeof(struct http_state));  
      current->next->next=NULL;
      current->next->previous=current;
-   }
+   }  
 
    current->http_headers_head=NULL;
-  
    return current;
 
 }
@@ -424,34 +405,52 @@ int close_http_connection(struct http_state * connection){
   return 0;
 }
 
-void parse_http_req_line(struct http_state * connection){
- 
-
-
-
+void clearing_headers(struct http_state * connection){
+  while(connection->http_headers_head!=NULL){
+    struct header * ptr=connection->http_headers_head->next;
+    free(connection->http_headers_head);
+    connection->http_headers_head=ptr;
+  }
 }
 
-void parse_http_header(struct http_state * connection){
+int parse_http_header(struct http_state * connection){
   char * request=connection->buffer;
   int offset=connection->offset;
-  int i,t,name_found; 
-  for(i=offset; (t=read(pollfd_sockets[connection->pollfd_index].fd, request+i, BUFFSIZE-i))>0; i+=t){
+  int i,t; 
+
+  for(i=offset; (t=read(connection->fd, request+i, BUFFSIZE-i))>0; i+=t){
     int z;
     for(z=0; z<t; z++){
-      if ( (request[i+z]=='\n') && (request[i+z-1]=='\r')){
-	        	name_found=1;
-		        request[i-1]=0;
-	        	if(controllo[count]->h[j].n[0]==0) break;
-	        	controllo[count]->h[++j].n=request+i+1;               
-	        	}
-        	if (primiduepunti && (request[i]==':')){
-         		controllo[count]->h[j].v = request+i+1;
-	        	request[i]=0;
-	        	primiduepunti=0;
-        	}
-       }
-  }
-       controllo[count]->offset=i;
-
-
+      if ( (i+z>1) && (request[i+z]=='\n') && (request[i+z-1]=='\r')){
+	      if((request[i+z-2]=='\n') && (request[i+z-3]==0)) return 1;
+        //if(connection->http_headers_tail->name==NULL) return 1;
+        request[i+z-1]=0;
+        if(connection->http_headers_head==NULL){
+          connection->http_headers_head=(struct header *)malloc(sizeof(struct header));
+          connection->http_headers_tail=connection->http_headers_head;
+          connection->http_headers_tail->name=request+i+z+1;
+          connection->http_headers_tail->next=NULL;
+        }
+        else{
+          connection->http_headers_tail->next=malloc(sizeof(struct header));
+          connection->http_headers_tail->next->next=NULL;
+          connection->http_headers_tail->next->name=request+i+z+1;
+          connection->http_headers_tail=connection->http_headers_tail->next;
+        }
+        connection->http_headers_tail->value=NULL;
+      }
+      if ((connection->http_headers_tail!=NULL) && (connection->http_headers_tail->value==NULL) && (request[i+z]==':')){
+        connection->http_headers_tail->value=request+i+z+1;
+	      request[i+z]=0;
+      }
+    }
+   }
+   connection->offset=i;
+   if(t==0){
+    return 0;
+   }
+   else{
+    errno=EAGAIN;
+    return -1;
+   }
 }

@@ -33,6 +33,7 @@ struct http_state{
   char buffer[BUFFSIZE];
   struct request_line;
   struct header * http_headers_head;
+  struct header * http_headers_tail;
   char numero_header;
   int offset;
 
@@ -58,7 +59,10 @@ struct http_state * get_http_connection(int fd);
 
 struct http_state * new_http_connection();
 
+int parse_http_header(struct http_state * connection);
+
 int close_http_connection(struct http_state * connection);
 
+void clearing_headers(struct http_state * connection);
 int verify(char *buffer);
 #endif
