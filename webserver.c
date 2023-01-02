@@ -13,17 +13,16 @@
 
 #include "webserver.h"
 
-struct pollfd * pollfd_sockets
+struct pollfd * pollfd_sockets;
 int active_sockets;
 
 struct sockaddr_in indirizzo;
 struct sockaddr_in remote_address;
 
-struct state * http_connections_head;
+struct http_state * http_connections_head;
 
 int primiduepunti;
-char *request;
-char *response;
+char response[1000];
 char *request_line;
 char *method,*uri,*http_ver,*scheme;
 
@@ -33,8 +32,14 @@ int main(){
  int list_socket,t,p,yes,z,j,i;
 
  list_socket=create_socket(80);
+ http_connections_head=NULL;
 
  pollfd_sockets=malloc(sizeof(struct pollfd)*POLLFD_LENGTH);
+ bzero((void*)pollfd_sockets,sizeof(struct pollfd)*POLLFD_LENGTH);
+ 
+ for(int q=0; q<POLLFD_LENGTH; q++)
+    pollfd_sockets[q].fd=-1;
+
 
  /* Creation of Pollfd Data Structure*/
  pollfd_sockets[0].fd=list_socket;
@@ -45,21 +50,23 @@ int main(){
  
  while(1){
 
-  if(poll(pollfd_sockets, active_sockets, -1) == -1){
+  int sockets;
+  if(poll(pollfd_sockets, POLLFD_LENGTH, -1) == -1){
      perror("Poll Failed");
      exit(1);
   }
 
   if((pollfd_sockets[0].revents) & POLLIN){
     int new_fd;
-    if(new_fd=accept(list_socket, (struct sockaddr *) &remote_address, &length_sockaddr) == -1){
+    if((new_fd=accept(list_socket, (struct sockaddr *) &remote_address, &length_sockaddr))==-1){
        perror("Accept Failed");
        exit(1);
     }
-
+    unsigned char * addr_ptr=(unsigned char *) &remote_address.sin_addr.s_addr;
+    printf("Connection incoming from address %d.%d.%d.%d at port %d, new file descriptor is%d\n",addr_ptr[0],addr_ptr[1],addr_ptr[2],addr_ptr[3],remote_address.sin_port,new_fd);
     /*Insert new element in the connection list*/ 
-    struct http_state * new_connection=new_http_connection(http_connections_head);
-    new_connection->fd=new_fd;        
+    struct http_state * new_connection=new_http_connection();
+    new_connection->fd=new_fd;       
     
     /*Adding element in the pollfd array, if no empty space is found the connection is shutted down*/
     int free_index=get_free_index(pollfd_sockets);
@@ -68,14 +75,14 @@ int main(){
     } 
     else{
       new_connection->pollfd_index=free_index;
+      pollfd_sockets[free_index].fd=new_fd;
       pollfd_sockets[free_index].events=POLLIN;
       new_connection->flusso=REQUEST_IN; 
 
       if(fcntl(new_fd,F_SETFL,fcntl(new_fd,F_GETFL,NULL) | O_NONBLOCK) == -1){
         perror("fcntl Failed");
         exit(1);
-      }
-
+      } 
       active_sockets++;
     }
   }   
@@ -84,33 +91,34 @@ int main(){
   /*Check if i have events on the sockets*/
    int count;
    for(count=1;count<POLLFD_LENGTH;count++){
-    if((pollfd_sockets[count].revents)){ //Evento nel socket Count
-      
-      /*Remote Host has closed connection*/
-      if(sockets[count].revents & POLLHUP){   
-        close_connection(sockets[count].fd);
-        numero--;
-        break;
-      } 
+    if(pollfd_sockets[count].revents){ //Evento nel socket Count
 
-    
-    switch(controllo[count]->flusso){
+    struct http_state * http_connection=get_http_connection(pollfd_sockets[count].fd);
+    if(http_connection==NULL) continue;
+
+    switch(http_connection->flusso){
 
      case(REQUEST_IN):{
    
-      if(sockets[count].revents & POLLHUP){
-        printf("Ha resettato");      
-        close(sockets[count].fd);
-        numero--;
+      /*Remote Host has closed connection*/
+      if(pollfd_sockets[count].revents & POLLHUP){   
+        close_http_connection(http_connection);
         break;
-      }
-      if(sockets[count].revents & POLLIN){
-        printf("DATA IN Connessione: %d\n\n",count);   
-        request=controllo[count]->buffer;
+      } 
+
+      /* Data to read in the Socket*/
+      if(pollfd_sockets[count].revents & POLLIN){
+        printf("Data in Socket of index: %d\n",count);   
+        //Just for testing
+        t=read(pollfd_sockets[count].fd,request,10000);
+        http_connection->flusso=RESPONSE_OUT;
+        pollfd_sockets[count].events=POLLOUT; 
+        /*
+        char * request=http_connection->buffer;
         controllo[count]->h[0].n=request;
         controllo[count]->h[0].v=controllo[count]->h[0].n;
         request_line=request;
-        for(i=controllo[count]->offset,j=controllo[count]->numero_header;(t=read(sockets[count].fd,request+i,1))>0;i++){
+        for(i=http_connection->offset,j=http_connection->numero_header;(t=read(pollfd_sockets[count].fd,request+i,1))>0;i++){
           	if (( i>1) && (request[i]=='\n') && (request[i-1]=='\r')){
 	        	primiduepunti=1;
 		        request[i-1]=0;
@@ -125,27 +133,19 @@ int main(){
        }
        controllo[count]->offset=i;
        controllo[count]->numero_header=j;
-      
+       */
        if (t==-1 && errno==EAGAIN) { 
          break;
        }
 
        if (t==0){
-           printf("Chiudo Connessione\n");
-           free(controllo[count]);
-           shutdown(sockets[count].fd,SHUT_RD);
-           close(sockets[count].fd);
-           int t;
-           for(t=count;t<numero;t++){ 
-             sockets[count]=sockets[count+1];
-             controllo[count]=controllo[count+1];
-           }
-           numero--;
+           printf("Remote has initiated connection closing\n");
+           close_http_connection(http_connection);
            break;
        }
 
 
-     
+      /*
        controllo[count]->offset=0; 
        controllo[count]->flusso=RESPONSE_OUT;
        sockets[count].events=POLLOUT; 
@@ -167,7 +167,7 @@ int main(){
 
        //printf("\nMethod = %s, URI = %s, Http-Version = %s\n", method, uri, http_ver);
        
-       /**********Controllo Header Vari*****************/
+       //**********Controllo Header Vari*****************
        controllo[count]->authorized=0; 
        for(i=1;i<j;i++){
           if(strcmp(controllo[count]->h[i].n,"Authorization")==0){
@@ -187,7 +187,7 @@ int main(){
                     controllo[count]->header_size=strlen(response);
                     controllo[count]->body_size=0;
                     break;
-                  }*/
+                  }
           }
           if(strcmp(controllo[count]->h[i].n,"If-None-Match")==0 && strcmp(controllo[count]->h[i].v," \"ciccio\"")==0){
                  response=controllo[count]->buffer;
@@ -203,12 +203,17 @@ int main(){
                  controllo[count]->header_size=strlen(response);
                  controllo[count]->body_size=0;
                  break;
-       }
+       }*/
       }
 	 }break;
 
      case(RESPONSE_OUT):{
-      if(sockets[count].revents & POLLOUT){
+      if(pollfd_sockets[count].revents & POLLOUT){
+       
+       sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
+       write(pollfd_sockets[count].fd,response,strlen(response));
+       
+       /*
        response=controllo[count]->buffer;
        write(1,"DATA OUT\n",9);
        //PROCESSAZIONE FILE
@@ -265,8 +270,9 @@ int main(){
      
        controllo[count]->offset=0;
        controllo[count]->numero_header=0;
-       sockets[count].events=POLLIN;
-       controllo[count]->flusso=REQUEST_IN;
+       */
+       pollfd_sockets[count].events=POLLIN;
+       http_connection->flusso=REQUEST_IN;
       }//Fine If POLLOUT
      }//Fine Case RESPONSE_OUT
     }//Fine Switch
@@ -342,12 +348,12 @@ int create_socket(unsigned short port){
 
 }
 
-struct http_state * new_http_connection(struct http_state *head){
-   struct http_state * current=head;
-   if(head == NULL){
-     head=(struct http_state *)malloc(sizeof(struct http_state));
-     head->next=NULL;
-     head->previous=NULL;
+struct http_state * new_http_connection(){
+   struct http_state * current=http_connections_head;
+   if(current == NULL){
+     current=http_connections_head=(struct http_state *)malloc(sizeof(struct http_state));
+     http_connections_head->next=NULL;
+     http_connections_head->previous=NULL;     
    }   
    else{
      while(current->next!=NULL) current=current->next;
@@ -365,12 +371,20 @@ struct http_state * new_http_connection(struct http_state *head){
 int get_free_index(struct pollfd * pollfd){
   int i;
   for(i=1;i<POLLFD_LENGTH;i++){
-    if(pollfd[i].fd>0) return i;
+    if(pollfd[i].fd<0) return i;
   }
   return -1;
 }
 
-//struct node * get_connection(struct node int index){}
+struct http_state * get_http_connection(int fd){
+  struct http_state * curr=http_connections_head;
+  while(curr!=NULL){
+    if(curr->fd==fd)
+      return curr;
+    curr=curr->next;    
+  }
+  return NULL;
+}
 
 int close_http_connection(struct http_state * connection){
 
@@ -382,27 +396,62 @@ int close_http_connection(struct http_state * connection){
     connection->http_headers_head=ptr;
   }
 
-  pollfd_sockets[connection->pollfd_index].fd=-1;
   if(shutdown(pollfd_sockets[connection->pollfd_index].fd,SHUT_RD)==-1){
     perror("Socket Shutdown Failed");
-    exit(1);
+    return -1;
   }
+
+  if(close(pollfd_sockets[connection->pollfd_index].fd)==-1){
+    perror("Socket Closing Failed");
+    return -1;
+  }
+  pollfd_sockets[connection->pollfd_index].fd=-1;
 
   // Remove Element in the Doubly linked List
   if(connection->previous==NULL){
-    free(connection);
-    http_connections_head=NULL;
+    http_connections_head=connection->next;
   }
   else{
-    
+    connection->previous->next=connection->next;
   }
-  free(connection->data);
-  close(sockets[count].fd);
-  int t;
-           for(t=count;t<numero;t++){ 
-             sockets[count]=sockets[count+1];
-             controllo[count]=controllo[count+1];
-           }
-           numero--;
-           break;
+
+  if(connection->next!=NULL){
+    connection->next->previous=connection->previous;
+  }
+
+  free(connection);
+ 
+  return 0;
+}
+
+void parse_http_req_line(struct http_state * connection){
+ 
+
+
+
+}
+
+void parse_http_header(struct http_state * connection){
+  char * request=connection->buffer;
+  int offset=connection->offset;
+  int i,t,name_found; 
+  for(i=offset; (t=read(pollfd_sockets[connection->pollfd_index].fd, request+i, BUFFSIZE-i))>0; i+=t){
+    int z;
+    for(z=0; z<t; z++){
+      if ( (request[i+z]=='\n') && (request[i+z-1]=='\r')){
+	        	name_found=1;
+		        request[i-1]=0;
+	        	if(controllo[count]->h[j].n[0]==0) break;
+	        	controllo[count]->h[++j].n=request+i+1;               
+	        	}
+        	if (primiduepunti && (request[i]==':')){
+         		controllo[count]->h[j].v = request+i+1;
+	        	request[i]=0;
+	        	primiduepunti=0;
+        	}
+       }
+  }
+       controllo[count]->offset=i;
+
+
 }

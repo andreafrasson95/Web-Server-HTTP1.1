@@ -7,6 +7,14 @@
 
 #define POLLFD_LENGTH 10
 
+#define BUFFSIZE 10000
+
+struct request_line{
+  char * method;
+  char * uri;
+  char *http_vers;
+};
+
 //Puntatore Header 
 struct header{
 char * name;
@@ -22,7 +30,8 @@ struct http_state{
   int fd;
   int pollfd_index;  
   
-  char buffer[1000];
+  char buffer[BUFFSIZE];
+  struct request_line;
   struct header * http_headers_head;
   char numero_header;
   int offset;
@@ -40,12 +49,16 @@ struct http_state{
   struct http_state * next;
 };
 
-
-
 //Metodi
-struct http_state * new_http_connection(struct http_state * head);
+int create_socket(unsigned short port);
 
-int close_http_connection(struct http_state * connection)
+int get_free_index(struct pollfd * pollfd);
+
+struct http_state * get_http_connection(int fd);
+
+struct http_state * new_http_connection();
+
+int close_http_connection(struct http_state * connection);
 
 int verify(char *buffer);
 #endif
