@@ -31,10 +31,9 @@ struct http_state{
   int pollfd_index;  
   
   char buffer[BUFFSIZE];
-  struct request_line;
+  struct request_line req_line;
   struct header * http_headers_head;
   struct header * http_headers_tail;
-  char numero_header;
   int offset;
 
   int authorized;
@@ -58,6 +57,8 @@ int get_free_index(struct pollfd * pollfd);
 struct http_state * get_http_connection(int fd);
 
 struct http_state * new_http_connection();
+
+int parse_request_line(struct http_state * connection);
 
 int parse_http_header(struct http_state * connection);
 

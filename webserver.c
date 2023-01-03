@@ -21,11 +21,7 @@ struct sockaddr_in remote_address;
 
 struct http_state * http_connections_head;
 
-int primiduepunti;
 char response[1000];
-char *request_line;
-char *method,*uri,*http_ver,*scheme;
-
 
 int main(){
 
@@ -63,7 +59,7 @@ int main(){
        exit(1);
     }
     unsigned char * addr_ptr=(unsigned char *) &remote_address.sin_addr.s_addr;
-    printf("Connection incoming from address %d.%d.%d.%d at port %d, new file descriptor is%d\n",addr_ptr[0],addr_ptr[1],addr_ptr[2],addr_ptr[3],remote_address.sin_port,new_fd);
+    printf("Connection incoming from address %d.%d.%d.%d at port %d, new file descriptor is %d\n",addr_ptr[0],addr_ptr[1],addr_ptr[2],addr_ptr[3],remote_address.sin_port,new_fd);
     /*Insert new element in the connection list*/ 
     struct http_state * new_connection=new_http_connection();
     new_connection->fd=new_fd;       
@@ -121,30 +117,23 @@ int main(){
          close_http_connection(http_connection);
          break;
         }
+        
+        parse_request_line(http_connection);
+
 
         http_connection->offset=0; 
-       http_connection->flusso=RESPONSE_OUT;
-       pollfd_sockets[count].events=POLLOUT; 
-       //STAMPA HEADER E CONTROLLI	
-       //printf("Request Line: %s\n",request_line);
-       struct header * ptr=http_connection->http_headers_head;
-       while(ptr!=NULL){
-           printf("%s ===> %s\n",ptr->name,ptr->value);
-           ptr=ptr->next;
-       }   
+        http_connection->flusso=RESPONSE_OUT;
+        pollfd_sockets[count].events=POLLOUT; 
+        
+        //STAMPA HEADER E CONTROLLI	
+        struct header * ptr=http_connection->http_headers_head;
+        while(ptr!=http_connection->http_headers_tail){
+         printf("%s ===> %s\n",ptr->name,ptr->value);
+         ptr=ptr->next;
+        }   
 	
-      /*
-       method = request_line;
-       for(i=0;request_line[i]!=' '&& request_line[i];i++){};
-       if (request_line[i]!=0) { request_line[i]=0; i++;}
-       uri = request_line + i;
-       controllo[count]->file_pointer=uri+1;
-       for(;request_line[i]!=' '&& request_line[i];i++){};
-       if (request_line[i]!=0) { request_line[i]=0; i++;}
-       http_ver = request_line +i;
-
-       //printf("\nMethod = %s, URI = %s, Http-Version = %s\n", method, uri, http_ver);
-       
+    
+       /*
        //**********Controllo Header Vari*****************
        controllo[count]->authorized=0; 
        for(i=1;i<j;i++){
@@ -331,10 +320,10 @@ int create_socket(unsigned short port){
 
 struct http_state * new_http_connection(){
    struct http_state * current=http_connections_head;
-   if(current == NULL){
+   if(http_connections_head == NULL){
      http_connections_head=(struct http_state *)malloc(sizeof(struct http_state));
      http_connections_head->next=NULL;
-     http_connections_head->previous=NULL;     
+     http_connections_head->previous=NULL;  
      current=http_connections_head;
    }   
    else{
@@ -342,11 +331,11 @@ struct http_state * new_http_connection(){
      current->next=(struct http_state *)malloc(sizeof(struct http_state));  
      current->next->next=NULL;
      current->next->previous=current;
+     current=current->next;
    }  
 
-   current->http_headers_head=NULL;
+   current->http_headers_head=current->http_headers_tail=NULL;  
    return current;
-
 }
 
 int get_free_index(struct pollfd * pollfd){
@@ -416,14 +405,14 @@ void clearing_headers(struct http_state * connection){
 int parse_http_header(struct http_state * connection){
   char * request=connection->buffer;
   int offset=connection->offset;
-  int i,t; 
+  int i,t,nr_header; 
 
   for(i=offset; (t=read(connection->fd, request+i, BUFFSIZE-i))>0; i+=t){
     int z;
     for(z=0; z<t; z++){
       if ( (i+z>1) && (request[i+z]=='\n') && (request[i+z-1]=='\r')){
-	      if((request[i+z-2]=='\n') && (request[i+z-3]==0)) return 1;
-        //if(connection->http_headers_tail->name==NULL) return 1;
+	      //if((request[i+z-2]=='\n') && (request[i+z-3]==0)) return 1;
+        if((connection->http_headers_head!=NULL) && (connection->http_headers_tail->name[0]=='\r')) return nr_header;
         request[i+z-1]=0;
         if(connection->http_headers_head==NULL){
           connection->http_headers_head=(struct header *)malloc(sizeof(struct header));
@@ -441,6 +430,7 @@ int parse_http_header(struct http_state * connection){
       }
       if ((connection->http_headers_tail!=NULL) && (connection->http_headers_tail->value==NULL) && (request[i+z]==':')){
         connection->http_headers_tail->value=request+i+z+1;
+        nr_header++;
 	      request[i+z]=0;
       }
     }
@@ -453,4 +443,22 @@ int parse_http_header(struct http_state * connection){
     errno=EAGAIN;
     return -1;
    }
+}
+
+int parse_request_line(struct http_state * connection){
+ int i;
+ char * request_line=connection->buffer;
+ connection->req_line.method = request_line;
+ for(i=0; request_line[i]!=' '; i++){};
+ request_line[i]=0; 
+ i++;
+ connection->req_line.uri = request_line + i;
+ for(;request_line[i]!=' ';i++){};
+ request_line[i]=0; 
+ i++;
+ connection->req_line.http_vers = request_line +i;
+
+ printf("\nMethod = %s, URI = %s, Http-Version = %s\n", connection->req_line.method, connection->req_line.uri, connection->req_line.http_vers);
+
+ return 0;
 }
