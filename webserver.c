@@ -107,7 +107,7 @@ int main(){
         printf("Data in Socket of index: %d and fd number: %d\n",count,pollfd_sockets[count].fd);   
         
         int p=parse_http_header(http_connection);   
-        printf("Il valore di p è %d\n",p);
+        printf("Nr. of Headers is: %d\n",p);
         if (p==-1 && errno==EAGAIN) { 
          break;
         }
@@ -127,14 +127,14 @@ int main(){
          ptr=ptr->next;
         }   
         
-        //if(check_http_authentication(http_connection)==0){
+        if(check_http_authentication(http_connection)==0){
 
           get_http_resource(http_connection);
 
 
 
           // ALL HTTP STUFF GOES HERE
-        //}
+        }
 
 
         http_connection->offset=0; 
@@ -234,7 +234,7 @@ int verify(char *buffer){
         if(buffer[i+2]=='=') j--;
         decoded[j]=0;
         printf("Stringa: %s \n",decoded);
-        if(strcmp(decoded,"Andrea:Frasso")==0) return 1; else return 0;
+        if(strcmp(decoded,"Andrea:Frasso")==0) return 0; else return -1;
 
 }
 
@@ -426,20 +426,21 @@ int check_http_authentication(struct http_state * connection){
   }   
 
   //If Authorization Header is not found, the host is not authorized to continue     
-  if(ptr==connection->http_headers_tail) return -1;
-
-  char *scheme=ptr->value;
-  int t;
-  for (t=1;t<strlen(scheme);t++)
-   if(scheme[t]==' ') break;
-  scheme[t]='\0';
-  char *autenticazione;
-  autenticazione=scheme+t+1;
-  authorized=verify(autenticazione);
+  if(ptr==connection->http_headers_tail){ 
+   authorized=-1;
+  }
+  else{  
+   char *scheme=ptr->value;
+   int t;
+   for (t=1;t<strlen(scheme);t++)
+    if(scheme[t]==' ') break;
+   scheme[t]='\0';
+   char *authentication=scheme+t+1;
+   authorized=verify(authentication);
                   
-  printf("Scheme: %s Login: %s\n",scheme,autenticazione);
-                    
-  if(authorized==0){
+  //printf("Scheme: %s Login: %s\n",scheme,autenticazione);
+  }                  
+  if(authorized==-1){
     sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
     connection->header_size=strlen(connection->buffer);
     connection->body_size=0;
