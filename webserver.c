@@ -129,37 +129,21 @@ int main(){
         
         if(check_http_authentication(http_connection)==0){
 
-          get_http_resource(http_connection);
-
-
-
-          // ALL HTTP STUFF GOES HERE
+          if(check_etag(http_connection)!=0){
+           get_http_resource(http_connection);
+          }
+            // ALL HTTP STUFF GOES HERE
         }
-
 
         http_connection->offset=0; 
         http_connection->flusso=RESPONSE_OUT;
         pollfd_sockets[count].events=POLLOUT; 
-        
-       /**********Controllo Header Vari*****************
-   
-          if(strcmp(controllo[count]->h[i].n,"If-None-Match")==0 && strcmp(controllo[count]->h[i].v," \"ciccio\"")==0){
-                 response=controllo[count]->buffer;
-                 sprintf(response,"HTTP/1.1 304 NOT MODIFIED\r\n\r\n");
-                 controllo[count]->header_size=strlen(response);
-                 controllo[count]->body_size=0;
-                 controllo[count]->skip=1;
-          }       
-       }
-*/
       }
 	 }break;
 
      case(RESPONSE_OUT):{
       if(pollfd_sockets[count].revents & POLLOUT){
-             
-       
-
+            
       //Riprendo dagli Header
         
       if(http_connection->offset<http_connection->header_size){
@@ -472,6 +456,27 @@ int get_http_resource(struct http_state * connection){
   }
 
 }
+
+int check_etag(struct http_state * connection){
+
+//Searching for the If-None_Match Header
+  struct header * ptr=connection->http_headers_head;
+  while(ptr!=connection->http_headers_tail){
+   if(strcmp(ptr->name,"If-None-Match")==0 && strcmp(ptr->value," \"ciccio\"")==0){
+    sprintf(connection->buffer,"HTTP/1.1 304 NOT MODIFIED\r\n\r\n");
+    connection->header_size=strlen(connection->buffer);
+    connection->body_size=0;
+    return 0;
+   } 
+   ptr=ptr->next;
+  }
+  return -1;   
+}       
+       
+
+
+
+
 
 
 

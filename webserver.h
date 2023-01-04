@@ -64,6 +64,8 @@ int parse_http_header(struct http_state * connection);
 
 int check_http_authentication(struct http_state * connection);
 
+int check_etag(struct http_state * connection);
+
 int get_http_resource(struct http_state * connection);
 
 int close_http_connection(struct http_state * connection);
