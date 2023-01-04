@@ -84,7 +84,7 @@ int main(){
   }   
 
 
-  /*Check if i have events on the sockets*/
+  //Check if i have events on the sockets
    int count;
    for(count=1;count<POLLFD_LENGTH;count++){
     if(pollfd_sockets[count].revents){ //Evento nel socket Count
@@ -120,6 +120,14 @@ int main(){
         
         parse_request_line(http_connection);
 
+        
+        if(check_http_authentication(http_connection)==0){
+
+
+
+          // ALL HTTP STUFF GOES HERE
+        }
+
 
         http_connection->offset=0; 
         http_connection->flusso=RESPONSE_OUT;
@@ -131,31 +139,8 @@ int main(){
          printf("%s ===> %s\n",ptr->name,ptr->value);
          ptr=ptr->next;
         }   
-	
-    
-       /*
-       //**********Controllo Header Vari*****************
-       controllo[count]->authorized=0; 
-       for(i=1;i<j;i++){
-          if(strcmp(controllo[count]->h[i].n,"Authorization")==0){
-                  scheme=controllo[count]->h[i].v;
-                  int t;
-                  for (t=1;t<strlen(controllo[count]->h[i].v);t++)
-                          if(controllo[count]->h[i].v[t]==' ')break;
-                  controllo[count]->h[i].v[t]='\0';
-                  char *autenticazione;
-                  autenticazione=&(controllo[count]->h[i].v[t+1]);
-                  controllo[count]->authorized=verify(autenticazione);
-                  //printf("Scheme: %s Login: %s\n",scheme,autenticazione);
-                  /*      
-                  if (controllo[count]->authorized==0){
-                    response=controllo[count]->buffer;
-                    sprintf(response,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
-                    controllo[count]->header_size=strlen(response);
-                    controllo[count]->body_size=0;
-                    break;
-                  }
-          }
+       /**********Controllo Header Vari*****************
+   
           if(strcmp(controllo[count]->h[i].n,"If-None-Match")==0 && strcmp(controllo[count]->h[i].v," \"ciccio\"")==0){
                  response=controllo[count]->buffer;
                  sprintf(response,"HTTP/1.1 304 NOT MODIFIED\r\n\r\n");
@@ -164,13 +149,7 @@ int main(){
                  controllo[count]->skip=1;
           }       
        }
-       if (controllo[count]->authorized==0){
-                 response=controllo[count]->buffer;
-                 sprintf(response,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
-                 controllo[count]->header_size=strlen(response);
-                 controllo[count]->body_size=0;
-                 break;
-       }*/
+*/
       }
 	 }break;
 
@@ -360,11 +339,7 @@ int close_http_connection(struct http_state * connection){
 
   // Start Cleaning
   struct header * ptr;
-  while(connection->http_headers_head!=NULL){
-    struct header * ptr=connection->http_headers_head->next;
-    free(connection->http_headers_head);
-    connection->http_headers_head=ptr;
-  }
+  clearing_headers(connection);
 
   if(shutdown(pollfd_sockets[connection->pollfd_index].fd,SHUT_RD)==-1){
     perror("Socket Shutdown Failed");
@@ -410,7 +385,7 @@ int parse_http_header(struct http_state * connection){
   for(i=offset; (t=read(connection->fd, request+i, BUFFSIZE-i))>0; i+=t){
     int z;
     for(z=0; z<t; z++){
-      if ( (i+z>1) && (request[i+z]=='\n') && (request[i+z-1]=='\r')){
+      if ((i+z>1) && (request[i+z]=='\n') && (request[i+z-1]=='\r')){
 	      //if((request[i+z-2]=='\n') && (request[i+z-3]==0)) return 1;
         if((connection->http_headers_head!=NULL) && (connection->http_headers_tail->name[0]=='\r')) return nr_header;
         request[i+z-1]=0;
@@ -462,3 +437,41 @@ int parse_request_line(struct http_state * connection){
 
  return 0;
 }
+
+int check_http_authentication(struct http_state * connection){
+   
+  int authorized=-1;
+
+  //Searching for the Authorization Header
+  struct header * ptr=connection->http_headers_head;
+  while(ptr!=connection->http_headers_tail){
+   if(strcmp(ptr->name,"Authorization")==0) break;
+   ptr=ptr->next;
+  }   
+
+  //If Authorization Header is not found, the host is not authorized to continue     
+  if(ptr==connection->http_headers_tail) return -1;
+
+  char *scheme=ptr->value;
+  int t;
+  for (t=1;t<strlen(scheme);t++)
+   if(scheme[t]==' ') break;
+  scheme[t]='\0';
+  char *autenticazione;
+  autenticazione=scheme+t+1;
+  authorized=verify(autenticazione);
+                  
+  printf("Scheme: %s Login: %s\n",scheme,autenticazione);
+                    
+  if(authorized==0){
+    sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
+    connection->header_size=strlen(response);
+    connection->body_size=0;
+  }
+
+  return authorized;
+}
+
+
+
+
