@@ -34,7 +34,7 @@ struct http_state{
   struct request_line req_line;
   struct header * http_headers_head;
   struct header * http_headers_tail;
-  int offset;
+  long int offset;
 
   int authorized;
   int skip; 
@@ -61,6 +61,10 @@ struct http_state * new_http_connection();
 int parse_request_line(struct http_state * connection);
 
 int parse_http_header(struct http_state * connection);
+
+int check_http_authentication(struct http_state * connection);
+
+int get_http_resource(struct http_state * connection);
 
 int close_http_connection(struct http_state * connection);
 

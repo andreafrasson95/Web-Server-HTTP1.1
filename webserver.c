@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 
 #include "webserver.h"
 
@@ -21,7 +22,6 @@ struct sockaddr_in remote_address;
 
 struct http_state * http_connections_head;
 
-char response[1000];
 
 int main(){
 
@@ -120,25 +120,27 @@ int main(){
         
         parse_request_line(http_connection);
 
-        
-        if(check_http_authentication(http_connection)==0){
-
-
-
-          // ALL HTTP STUFF GOES HERE
-        }
-
-
-        http_connection->offset=0; 
-        http_connection->flusso=RESPONSE_OUT;
-        pollfd_sockets[count].events=POLLOUT; 
-        
         //STAMPA HEADER E CONTROLLI	
         struct header * ptr=http_connection->http_headers_head;
         while(ptr!=http_connection->http_headers_tail){
          printf("%s ===> %s\n",ptr->name,ptr->value);
          ptr=ptr->next;
         }   
+        
+        //if(check_http_authentication(http_connection)==0){
+
+          get_http_resource(http_connection);
+
+
+
+          // ALL HTTP STUFF GOES HERE
+        //}
+
+
+        http_connection->offset=0; 
+        http_connection->flusso=RESPONSE_OUT;
+        pollfd_sockets[count].events=POLLOUT; 
+        
        /**********Controllo Header Vari*****************
    
           if(strcmp(controllo[count]->h[i].n,"If-None-Match")==0 && strcmp(controllo[count]->h[i].v," \"ciccio\"")==0){
@@ -155,73 +157,47 @@ int main(){
 
      case(RESPONSE_OUT):{
       if(pollfd_sockets[count].revents & POLLOUT){
+             
        
-       sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
-       write(pollfd_sockets[count].fd,response,strlen(response));
 
-       
-       /*
-       response=controllo[count]->buffer;
-       write(1,"DATA OUT\n",9);
-       //PROCESSAZIONE FILE
-        //PRIMA VOLTA QUI	
-       if( (controllo[count]->offset==0) && (controllo[count]->authorized==1) && (controllo[count]->skip==0) ){
-         	
-        if( access(controllo[count]->file_pointer, F_OK)){ 
-
-            printf("File %s Non Aperto\n",controllo[count]->file_pointer);
-            sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
-            controllo[count]->header_size=strlen(response);
-            controllo[count]->body_size=0;
-        }  
-        else{
-           controllo[count]->fin=open(controllo[count]->file_pointer,O_RDONLY);
-           struct stat info;
-           stat(controllo[count]->file_pointer,&info);
-           controllo[count]->content_length=info.st_size;            
-
-           sprintf(response,"HTTP/1.1 200 OK\r\nServer: Frassi_WebServer\r\nEtag: \"ciccio\"\r\nConnection: keep-alive\r\nContent-Length: %d\r\n\r\n",controllo[count]->content_length);
-           controllo[count]->header_size=strlen(response);	  
-           controllo[count]->body_size=controllo[count]->content_length;
-           
-        }
-         	
-       }
-         //Riprendo dagli Header
+      //Riprendo dagli Header
         
-       if(controllo[count]->offset<controllo[count]->header_size){
-         t=write(sockets[count].fd,response+controllo[count]->offset,controllo[count]->header_size-controllo[count]->offset);
-         if(t==-1 && errno==EAGAIN)
-           break;
+      if(http_connection->offset<http_connection->header_size){
+       t=write(http_connection->fd, http_connection->buffer+http_connection->offset,http_connection->header_size-http_connection->offset);
+       if(t==-1 && errno==EAGAIN)
+        break;
 
-         controllo[count]->offset+=t;
+       http_connection->offset+=t;
          
-         if(controllo[count]->offset<controllo[count]->header_size) break;
-         controllo[count]->skip=0;
+       if(http_connection->offset<(http_connection->header_size-1)){
+        break;
        }
-         //Riprendo dal Body
+
+       http_connection->offset=0; 
+       http_connection->header_size=0;
+      }
+      
+      //Riprendo dal Body
          
-       if( controllo[count]->body_size>0){
-          
-         controllo[count]->offset=0; 
-         t=sendfile(sockets[count].fd,controllo[count]->fin,&controllo[count]->offset,controllo[count]->body_size-controllo[count]->offset);
+      if(http_connection->body_size>0){
+       t=sendfile(http_connection->fd, http_connection->fin, &http_connection->offset, http_connection->body_size-http_connection->offset);
+       if(t==-1 && errno==EAGAIN)
+        break;
+      
+      if(http_connection->offset==http_connection->body_size){
+       http_connection->body_size=0;      
+       close(http_connection->fin);
+      }
+	    else 
+       break;		  
+      }     
 
-         if(t==-1 && errno==EAGAIN)
-            break;
-         if(controllo[count]->offset==controllo[count]->body_size)
-            close(controllo[count]->fin);
-	 else 
-            break;		  
-       }        
- 
-     
-       controllo[count]->offset=0;
-       controllo[count]->numero_header=0;
-       */
-       pollfd_sockets[count].events=POLLIN;
-       http_connection->flusso=REQUEST_IN;
+      http_connection->offset=0;
+    
+      pollfd_sockets[count].events=POLLIN;
+      http_connection->flusso=REQUEST_IN;
 
-       clearing_headers(http_connection);
+      clearing_headers(http_connection);
       }//Fine If POLLOUT
      }//Fine Case RESPONSE_OUT
     }//Fine Switch
@@ -380,7 +356,7 @@ void clearing_headers(struct http_state * connection){
 int parse_http_header(struct http_state * connection){
   char * request=connection->buffer;
   int offset=connection->offset;
-  int i,t,nr_header; 
+  int i,t,nr_header=0; 
 
   for(i=offset; (t=read(connection->fd, request+i, BUFFSIZE-i))>0; i+=t){
     int z;
@@ -465,11 +441,35 @@ int check_http_authentication(struct http_state * connection){
                     
   if(authorized==0){
     sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
-    connection->header_size=strlen(response);
+    connection->header_size=strlen(connection->buffer);
     connection->body_size=0;
   }
 
   return authorized;
+}
+
+int get_http_resource(struct http_state * connection){
+  
+  char * response= connection->buffer;
+  
+  //Retrieve the resource	
+  if((access((connection->req_line.uri)+1, F_OK))!=0){ 
+   printf("File %s Non Aperto\n",connection->req_line.uri);
+   sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
+   connection->header_size=strlen(response);
+   connection->body_size=0;
+   perror("File: ");
+  }  
+  else{
+   connection->fin=open((connection->req_line.uri)+1,O_RDONLY);
+   struct stat info;
+   stat((connection->req_line.uri)+1,&info);
+   connection->content_length=info.st_size;         
+   sprintf(response,"HTTP/1.1 200 OK\r\nServer: Frassi_WebServer\r\nEtag: \"ciccio\"\r\nConnection: keep-alive\r\nContent-Length: %d\r\n\r\n",connection->content_length);
+   connection->header_size=strlen(response);	  
+   connection->body_size=info.st_size;     
+  }
+
 }
 
 
