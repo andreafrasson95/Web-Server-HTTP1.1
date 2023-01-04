@@ -37,9 +37,7 @@ struct http_state{
   long int offset;
 
   int authorized;
-  int skip; 
  
-  char *file_pointer;
   int fin;
   int content_length;
   int header_size;

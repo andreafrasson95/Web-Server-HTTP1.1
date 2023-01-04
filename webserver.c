@@ -17,7 +17,7 @@
 struct pollfd * pollfd_sockets;
 int active_sockets;
 
-struct sockaddr_in indirizzo;
+struct sockaddr_in address;
 struct sockaddr_in remote_address;
 
 struct http_state * http_connections_head;
@@ -239,11 +239,11 @@ int create_socket(unsigned short port){
     exit(1);
  }
 
- indirizzo.sin_family=AF_INET;
- indirizzo.sin_port=htons(port);
- indirizzo.sin_addr.s_addr=0;
+ address.sin_family=AF_INET;
+ address.sin_port=htons(port);
+ address.sin_addr.s_addr=0;
 
- if(bind(s,(struct sockaddr*)&indirizzo,sizeof(struct sockaddr_in))==-1){
+ if(bind(s,(struct sockaddr*)&address,sizeof(struct sockaddr_in))==-1){
     perror("Bind Failed");
     exit(1);
  }
