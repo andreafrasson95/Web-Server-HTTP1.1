@@ -1,4 +1,10 @@
-# Web-Server-HTTP1.1
-Web Server Implementation in C
+# HTTP 1.1 Web Server
 
-//Work In Progeeress//
+This repository contain the C code of a simple HTTP Web Server coded by me as described in RFC 9112
+Features currently available:
+
+>GET file requests satisfied
+>Web Authentication Working
+>Etag Support
+
+
