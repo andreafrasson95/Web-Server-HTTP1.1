@@ -417,7 +417,7 @@ int check_http_authentication(struct http_state * connection){
   //printf("Scheme: %s Login: %s\n",scheme,autenticazione);
                     
   if(authorized==-1){
-    sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
+    sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 14\r\nWWW-Authenticate: Basic Realm=\"Basic\"\r\n\r\nNot Authorized");
     connection->header_size=strlen(connection->buffer);
     connection->body_size=0;
   }
@@ -432,7 +432,7 @@ int get_http_resource(struct http_state * connection){
   //Retrieve the resource	
   if((access((connection->req_line.uri)+1, F_OK))!=0){ 
    printf("File %s Non Aperto\n",connection->req_line.uri);
-   sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
+   sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 14\r\n\r\nFile not Found"); 
    connection->header_size=strlen(response);
    connection->body_size=0;
   }  
@@ -441,7 +441,7 @@ int get_http_resource(struct http_state * connection){
    struct stat info;
    stat((connection->req_line.uri)+1,&info);
    connection->content_length=info.st_size;         
-   sprintf(response,"HTTP/1.1 200 OK\r\nServer: Frassi_WebServer\r\nEtag: \"ciccio\"\r\nConnection: keep-alive\r\nContent-Length: %d\r\n\r\n",connection->content_length);
+   sprintf(response,"HTTP/1.1 200 OK\r\nServer: Frassi_WebServer\r\nEtag: \"test\"\r\nConnection: keep-alive\r\nContent-Length: %d\r\n\r\n",connection->content_length);
    connection->header_size=strlen(response);	  
    connection->body_size=info.st_size;     
   }
@@ -453,7 +453,7 @@ int check_etag(struct http_state * connection){
 //Searching for the If-None_Match Header
   struct header * ptr=connection->http_headers_head;
   while(ptr!=connection->http_headers_tail){
-   if(strcmp(ptr->name,"If-None-Match")==0 && strcmp(ptr->value," \"ciccio\"")==0){
+   if(strcmp(ptr->name,"If-None-Match")==0 && strcmp(ptr->value," \"test\"")==0){
     sprintf(connection->buffer,"HTTP/1.1 304 NOT MODIFIED\r\n\r\n");
     connection->header_size=strlen(connection->buffer);
     connection->body_size=0;
