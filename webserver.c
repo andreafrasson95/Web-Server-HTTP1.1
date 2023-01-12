@@ -405,25 +405,17 @@ int check_http_authentication(struct http_state * connection){
   //Searching for the Authorization Header
   struct header * ptr=connection->http_headers_head;
   while(ptr!=connection->http_headers_tail){
-   if(strcmp(ptr->name,"Authorization")==0) break;
+   if(strcmp(ptr->name,"Authorization")==0){
+    int t;
+    for(t=1; t<strlen(ptr->value) && ptr->value[t]!=' '; t++ ){}
+    ptr->value[t]='\0';
+    authorized=verify(ptr->value+t+1);
+    break;
+   }
    ptr=ptr->next;
   }   
-
-  //If Authorization Header is not found, the host is not authorized to continue     
-  if(ptr==connection->http_headers_tail){ 
-   authorized=-1;
-  }
-  else{  
-   char *scheme=ptr->value;
-   int t;
-   for (t=1;t<strlen(scheme);t++)
-    if(scheme[t]==' ') break;
-   scheme[t]='\0';
-   char *authentication=scheme+t+1;
-   authorized=verify(authentication);
-                  
   //printf("Scheme: %s Login: %s\n",scheme,autenticazione);
-  }                  
+                    
   if(authorized==-1){
     sprintf(connection->buffer,"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 13\r\nWWW-Authenticate: Basic Realm=\"Merda\"\r\n\r\nMa Dove Vai?!");
     connection->header_size=strlen(connection->buffer);
@@ -443,7 +435,6 @@ int get_http_resource(struct http_state * connection){
    sprintf(response,"HTTP/1.1 404 Not Found\r\nServer: Frassi_WebServer\r\nContent-Length: 16\r\n\r\nFile non trovato"); 
    connection->header_size=strlen(response);
    connection->body_size=0;
-   perror("File: ");
   }  
   else{
    connection->fin=open((connection->req_line.uri)+1,O_RDONLY);
